@@ -3,58 +3,93 @@ from datetime import datetime, timedelta, timezone
 import feedparser
 from telegram import Bot
 from pathlib import Path
+from dotenv import load_dotenv
+from typing import List, Set, Optional
+import os
+import sys
 
+# Load environment variables from .env file
+load_dotenv()
 
-CHANNELS = [
-    "https://www.youtube.com/feeds/videos.xml?channel_id=UCciQ8wFcVoIIMi-lfu8-cjQ",  # Anton Petrov
-    "https://www.youtube.com/feeds/videos.xml?channel_id=UCZ9jWH_8tJ-Nmaj8dSQdEYA",  # Stefan Milo
-    "https://www.youtube.com/feeds/videos.xml?channel_id=UC1yNl2E66ZzKApQdRuTQ4tw",  # Sabine Hossenfelder
-    "https://www.youtube.com/feeds/videos.xml?channel_id=UCMLtBahI5DMrt0NPvDSoIRQ" #Machine Learning Street Talk
-]
-BOT_TOKEN = "7831388539:AAEewWAe1_kla7DuSDOtEL-GFzKBFcKPkU0"
-CHAT_ID = -1002619953898
-videos = []
-script_dir = Path(__file__).parent
-file_path = script_dir / "last_date.txt"
+BOT_TOKEN = os.getenv("API_KEY")
+CHAT_ID = os.getenv("CHAT_ID")
 
-try:
-    with open(file_path, 'r') as file:
-              last_date = file.read()
-    last_date = last_date.strip()
-    last_date = datetime.strptime(last_date, '%Y-%m-%dT%H:%M:%S%z')
-except FileNotFoundError:
-    last_date = datetime.now().date() - datetime.timedelta(days=1)
+if not BOT_TOKEN or not CHAT_ID:
+    print("Error: API_KEY and/or CHAT_ID not set in environment variables.")
+    sys.exit(1)
 
-async def get_links(rss_url):
+def load_channels(filename: str) -> List[str]:
+    """Load channel RSS URLs from a file, ignoring comments and blank lines."""
+    path = Path(filename)
+    if not path.exists():
+        print(f"Error: {filename} does not exist.")
+        sys.exit(1)
+    with path.open("r", encoding="utf-8") as file:
+        return [line.split('#', 1)[0].strip() for line in file if line.strip() and not line.strip().startswith("#")]
+
+def load_last_date(path: Path) -> datetime:
+    """Load the last checked date from a file, or return 1 day ago if not found."""
+    try:
+        with open(path, 'r') as file:
+            last_date_str = file.read().strip()
+            return datetime.strptime(last_date_str, '%Y-%m-%dT%H:%M:%S%z')
+    except FileNotFoundError:
+        return datetime.now(timezone.utc) - timedelta(days=1)
+    except Exception as e:
+        print(f"Error reading last_date: {e}")
+        return datetime.now(timezone.utc) - timedelta(days=1)
+
+def save_last_date(path: Path, dt: datetime):
+    """Save the current date as the last checked date."""
+    with open(path, 'w') as file:
+        file.write(dt.strftime('%Y-%m-%dT%H:%M:%S%z'))
+
+async def fetch_new_video_links(rss_url: str, since: datetime) -> Set[str]:
+    """Fetch new video links from a YouTube RSS feed published after 'since'."""
     d = feedparser.parse(rss_url)
+    links = set()
     for entry in d.entries:
         try:
             published = entry.published
             published_date = datetime.strptime(published, '%Y-%m-%dT%H:%M:%S%z')
-            print(published_date)
-            if published_date > last_date:
-                videos.append(entry.link)
+            if published_date > since:
+                links.add(entry.link)
         except Exception as e:
             print(f"Error parsing entry: {e}")
-            continue
+    return links
 
-async def main():
-    for channel in CHANNELS:
-        await get_links(channel)
-
-    bot = Bot(token=BOT_TOKEN)
-    for link in videos:
+async def send_telegram_messages(bot: Bot, chat_id: int, links: List[str]):
+    """Send messages with video links to the specified Telegram chat."""
+    for link in links:
         print(f"Sending: {link}")
         try:
-            await bot.send_message(chat_id=CHAT_ID, text=link) 
+            await bot.send_message(chat_id=chat_id, text=link)
         except Exception as e:
             print(f"Failed to send message: {e}")
-        await asyncio.sleep(10)  # To avoid hitting Telegram rate limits
+        await asyncio.sleep(10)  # To avoid Telegram rate limits
 
-    # Update last_date.txt with the current time
-    with open(file_path, 'w') as file:
-        file.write(datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S%z'))
+async def main():
+    script_dir = Path(__file__).parent
+    file_path = script_dir / "last_date.txt"
+    channels_file = script_dir / "channels.txt"
 
-# Run with a global timeout (optional)
-asyncio.run(asyncio.wait_for(main(), timeout=120))
+    channels = load_channels(str(channels_file))
+    last_date = load_last_date(file_path)
+    print(f"Last checked date: {last_date}")
+
+    # Fetch all new video links concurrently
+    tasks = [fetch_new_video_links(url, last_date) for url in channels]
+    results = await asyncio.gather(*tasks)
+    new_links = sorted(set().union(*results))
+
+    if new_links:
+        bot = Bot(token=BOT_TOKEN)
+        await send_telegram_messages(bot, int(CHAT_ID), new_links)
+        save_last_date(file_path, datetime.now(timezone.utc))
+        print(f"Sent {len(new_links)} new video(s).")
+    else:
+        print("No new videos found.")
+
+if __name__ == "__main__":
+    asyncio.run(asyncio.wait_for(main(), timeout=120))
 

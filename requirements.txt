@@ -1,0 +1,6 @@
+asyncio>=3.4.3
+datetime>=5.5
+feedparser>=6.0.11
+pathlib>=1.0.1
+typing>=3.7.4.3
+python-telegram-bot>=22.0
