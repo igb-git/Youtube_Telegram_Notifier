@@ -2,6 +2,8 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import feedparser
 from telegram import Bot
+from pathlib import Path
+
 
 CHANNELS = [
     "https://www.youtube.com/feeds/videos.xml?channel_id=UCciQ8wFcVoIIMi-lfu8-cjQ",  # Anton Petrov
@@ -12,9 +14,11 @@ CHANNELS = [
 BOT_TOKEN = "7831388539:AAEewWAe1_kla7DuSDOtEL-GFzKBFcKPkU0"
 CHAT_ID = -1002619953898
 videos = []
+script_dir = Path(__file__).parent
+file_path = script_dir / "last_date.txt"
 
 try:
-    with open('last_date.txt', 'r') as file:
+    with open(file_path, 'r') as file:
               last_date = file.read()
     last_date = last_date.strip()
     last_date = datetime.strptime(last_date, '%Y-%m-%dT%H:%M:%S%z')
@@ -48,7 +52,7 @@ async def main():
         await asyncio.sleep(10)  # To avoid hitting Telegram rate limits
 
     # Update last_date.txt with the current time
-    with open('last_date.txt', 'w') as file:
+    with open(file_path, 'w') as file:
         file.write(datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S%z'))
 
 # Run with a global timeout (optional)
