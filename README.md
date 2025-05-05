@@ -13,15 +13,12 @@ This Python script monitors a list of YouTube channel RSS feeds and sends new vi
 1. **Clone the repository** and install requirements:
 git clone https://github.com/yourusername/yt-telegram-notifier.git
 cd yt-telegram-notifier
-pip install -r requirements.txt
+pip install -r requirements.txt #works for python 3.11
 
 
 2. **Create a `.env` file** in the project directory:
 API_KEY=your_telegram_bot_token
 CHAT_ID=your_telegram_chat_id
-
-3. **Create `channels.txt`** in the project directory, listing one YouTube RSS URL per line.
-You can comment lines with `#`:
 
 
 3. **Create `channels.txt`** in the project directory, listing one YouTube RSS URL per line.
